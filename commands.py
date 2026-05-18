@@ -597,10 +597,16 @@ async def handle_command(
     elif cmd == "cd":
         if not args:
             return "⚠️ 用法：`/cd [路径]`"
-        path = os.path.expanduser(args)
+        cur = await store.get_current_raw(user_id, chat_id)
+        base_dir = cur.get("cwd", DEFAULT_CWD)
+        raw = os.path.expanduser(args.strip())
+        if os.path.isabs(raw):
+            path = raw
+        else:
+            path = os.path.abspath(os.path.join(base_dir, raw))
         if not os.path.isdir(path):
             return f"❌ 路径不存在：`{path}`"
-        old_name = (await store.get_current_raw(user_id, chat_id)).get("workspace", "")
+        old_name = cur.get("workspace", "")
         await store.set_cwd(user_id, chat_id, path)
         suffix = "，并解除原工作空间绑定" if old_name else ""
         return f"✅ 工作目录已切换为 `{path}`{suffix}"
