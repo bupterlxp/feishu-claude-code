@@ -277,7 +277,7 @@ async def _run_and_display(
     plan_exited = False  # Claude 调了 ExitPlanMode
     last_push_time = 0.0
     push_failures = 0
-    _PUSH_INTERVAL = 0.4
+    _PUSH_INTERVAL = 2.0
     _MAX_STREAM_DISPLAY = 2500
 
     async def push(content: str):

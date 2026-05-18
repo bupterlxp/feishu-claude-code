@@ -34,9 +34,9 @@ MODE_ALIASES = {
 }
 
 MODEL_ALIASES = {
-    "opus": "claude-opus-4-6",
-    "sonnet": "claude-sonnet-4-6",
-    "haiku": "claude-haiku-4-5-20251001",
+    "opus": "ep-5o96ln-1770432475019207263",
+    "sonnet": "ep-nsitap-1768964384995638827",
+    "haiku": "ep-nsitap-1768964384995638827",
 }
 
 HELP_TEXT = """\
@@ -279,106 +279,39 @@ def _read_skill_desc(fpath: str) -> str:
 
 
 def _get_usage() -> str:
-    """
-    发一个轻量 API 请求，从响应 headers 获取 Claude Max 订阅用量百分比和重置时间。
-    """
-    if sys.platform != "darwin":
-        return "❌ /usage 目前只支持 macOS"
-
-    import urllib.request
-    import urllib.error
-    import ssl
-
+    """显示当前配置信息（自定义网关模式无订阅用量概念）"""
     try:
-        result = subprocess.run(
-            ["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
-            capture_output=True, text=True, timeout=5,
+        settings_path = os.path.expanduser("~/.claude/settings.json")
+        with open(settings_path) as f:
+            settings = json.load(f)
+        env = settings.get("env", {})
+        base_url = env.get("ANTHROPIC_BASE_URL", "未配置")
+        model = env.get("ANTHROPIC_MODEL", "未配置")
+        return (
+            "📊 **当前配置**\n\n"
+            f"API 网关：`{base_url}`\n"
+            f"默认模型：`{model}`\n\n"
+            "当前使用自定义网关，无订阅用量限制信息。"
         )
-        creds = json.loads(result.stdout.strip())
-        token = creds["claudeAiOauth"]["accessToken"]
     except Exception as e:
-        return f"❌ 读取凭证失败：{e}"
-
-    body = json.dumps({
-        "model": "claude-haiku-4-5-20251001",
-        "max_tokens": 1,
-        "messages": [{"role": "user", "content": "hi"}],
-    }).encode()
-
-    req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
-        data=body,
-        headers={
-            "Authorization": f"Bearer {token}",
-            "anthropic-beta": "oauth-2025-04-20",
-            "anthropic-version": "2023-06-01",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-
-    try:
-        ctx = ssl.create_default_context()
-        with urllib.request.urlopen(req, context=ctx, timeout=10) as resp:
-            headers = dict(resp.headers)
-    except urllib.error.HTTPError as e:
-        headers = dict(e.headers)
-    except Exception as e:
-        return f"❌ 获取用量失败：{e}"
-
-    def h(key):
-        return headers.get(key) or headers.get(key.lower()) or headers.get(key.replace("-", "_"))
-
-    def fmt_pct(val):
-        if val is None:
-            return "未知"
-        pct = float(val) * 100
-        bar_len = 20
-        filled = round(pct / 100 * bar_len)
-        bar = "█" * filled + "░" * (bar_len - filled)
-        return f"{bar} {pct:.1f}%"
-
-    def fmt_reset(ts):
-        if ts is None:
-            return "未知"
-        try:
-            dt = datetime.fromtimestamp(int(ts))
-            now = datetime.now()
-            diff = dt - now
-            hours = int(diff.total_seconds() // 3600)
-            minutes = int((diff.total_seconds() % 3600) // 60)
-            return f"{dt.strftime('%m/%d %H:%M')}（{hours}h{minutes}m 后）"
-        except Exception:
-            return ts
-
-    u5h = h("anthropic-ratelimit-unified-5h-utilization")
-    u7d = h("anthropic-ratelimit-unified-7d-utilization")
-    r5h = h("anthropic-ratelimit-unified-5h-reset")
-    r7d = h("anthropic-ratelimit-unified-7d-reset")
-    s5h = h("anthropic-ratelimit-unified-5h-status") or "unknown"
-    s7d = h("anthropic-ratelimit-unified-7d-status") or "unknown"
-
-    if u5h is None and u7d is None:
-        return "📊 **Usage**\n\n未能获取用量数据（响应中无用量 headers）。"
-
-    lines = ["📊 **Claude Max 用量**\n"]
-    lines.append(f"**5小时窗口**（状态：{s5h}）")
-    lines.append(f"{fmt_pct(u5h)}")
-    lines.append(f"重置时间：{fmt_reset(r5h)}\n")
-    lines.append(f"**7天窗口**（状态：{s7d}）")
-    lines.append(f"{fmt_pct(u7d)}")
-    lines.append(f"重置时间：{fmt_reset(r7d)}")
-
-    return "\n".join(lines)
+        return f"❌ 读取配置失败：{e}"
 
 
 
 def _list_mcp() -> str:
-    """调用 claude mcp list 获取已配置的 MCP servers"""
+    """调用 claude mcp list 获取已配置的 MCP servers（以 claude-user 身份）"""
+    import pwd
     try:
+        claude_user_info = pwd.getpwnam("claude-user")
+        env = os.environ.copy()
+        env["HOME"] = "/home/claude-user"
+        env["PATH"] = "/root/.nvm/versions/node/v20.19.5/bin:" + env.get("PATH", "")
         result = subprocess.run(
             [CLAUDE_CLI, "mcp", "list"],
-            capture_output=True, text=True, timeout=10,
+            capture_output=True, text=True, timeout=15,
+            env=env,
+            user=claude_user_info.pw_uid,
+            group=claude_user_info.pw_gid,
         )
         output = result.stdout.strip()
     except Exception as e:

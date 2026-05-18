@@ -70,8 +70,12 @@ async def run_claude(
             "--output-format", "stream-json",
             "--verbose",
             "--include-partial-messages",
-            "--permission-mode", permission_mode or PERMISSION_MODE,
         ]
+        _mode = permission_mode or PERMISSION_MODE
+        if _mode == "bypassPermissions":
+            cmd += ["--dangerously-skip-permissions"]
+        else:
+            cmd += ["--permission-mode", _mode]
         if active_session_id:
             cmd += ["--resume", active_session_id]
         if model:
@@ -79,15 +83,22 @@ async def run_claude(
 
         env = os.environ.copy()
         env.pop("CLAUDECODE", None)
+        env["PATH"] = "/root/.nvm/versions/node/v20.19.5/bin:" + env.get("PATH", "")
+        env["HOME"] = "/home/claude-user"
+
+        import pwd
+        claude_user_info = pwd.getpwnam("claude-user")
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=cwd or os.path.expanduser("~"),
+            cwd=cwd or "/share/leixinping",
             env=env,
             limit=10 * 1024 * 1024,
+            user=claude_user_info.pw_uid,
+            group=claude_user_info.pw_gid,
         )
 
         await _fire_callback(on_process_start, proc)

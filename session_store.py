@@ -168,25 +168,35 @@ def _extract_conversation_context(fpath: str, max_chars: int = 2000) -> str:
 
 
 def _get_api_token() -> Optional[str]:
-    """获取 Claude API token，先试 credentials 文件，再试 keychain"""
+    """获取 API token，从 ~/.claude/settings.json 读取自定义网关的 token"""
     try:
-        creds_path = os.path.expanduser("~/.claude/.credentials.json")
-        if os.path.isfile(creds_path):
-            with open(creds_path) as f:
-                creds = json.load(f)
-            return creds["claudeAiOauth"]["accessToken"]
-        result = subprocess.run(
-            ["security", "find-generic-password", "-s", "Claude Code-credentials", "-w"],
-            capture_output=True, text=True, timeout=5,
-        )
-        creds = json.loads(result.stdout.strip())
-        return creds["claudeAiOauth"]["accessToken"]
+        settings_path = os.path.expanduser("~/.claude/settings.json")
+        if os.path.isfile(settings_path):
+            with open(settings_path) as f:
+                settings = json.load(f)
+            return settings.get("env", {}).get("ANTHROPIC_AUTH_TOKEN")
     except Exception:
-        return None
+        pass
+    return os.environ.get("ANTHROPIC_AUTH_TOKEN")
+
+
+def _get_api_base_url() -> str:
+    """获取 API base URL"""
+    try:
+        settings_path = os.path.expanduser("~/.claude/settings.json")
+        if os.path.isfile(settings_path):
+            with open(settings_path) as f:
+                settings = json.load(f)
+            url = settings.get("env", {}).get("ANTHROPIC_BASE_URL")
+            if url:
+                return url
+    except Exception:
+        pass
+    return os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
 
 
 def generate_summary(session_id: str, token: Optional[str] = None) -> str:
-    """为指定 session 调用 haiku 生成一句话摘要"""
+    """为指定 session 调用模型生成一句话摘要"""
     fpath = _find_session_file(session_id)
     if not fpath:
         return ""
@@ -198,8 +208,11 @@ def generate_summary(session_id: str, token: Optional[str] = None) -> str:
     if not token:
         return ""
 
+    base_url = _get_api_base_url()
+    model = os.environ.get("ANTHROPIC_DEFAULT_HAIKU_MODEL", "ep-nsitap-1768964384995638827")
+
     body = json.dumps({
-        "model": "claude-haiku-4-5-20251001",
+        "model": model,
         "max_tokens": 40,
         "messages": [{"role": "user", "content": (
             "用10-20个中文字总结这段对话的主题。"
@@ -209,11 +222,10 @@ def generate_summary(session_id: str, token: Optional[str] = None) -> str:
     }).encode()
 
     req = urllib.request.Request(
-        "https://api.anthropic.com/v1/messages",
+        f"{base_url}/v1/messages",
         data=body,
         headers={
             "Authorization": f"Bearer {token}",
-            "anthropic-beta": "oauth-2025-04-20",
             "anthropic-version": "2023-06-01",
             "Content-Type": "application/json",
         },
