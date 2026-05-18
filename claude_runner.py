@@ -207,10 +207,18 @@ async def run_claude(
     final_text, new_session_id, returncode, stderr_text = await _run_once(session_id)
     used_fresh_session_fallback = False
 
-    # Claude 的 session 与 cwd 不兼容时，CLI 有时直接 code=1 且 stderr 为空。
-    # 这种场景自动退回新 session，避免用户必须手动 /new。
-    if session_id and returncode != 0 and not stderr_text and not final_text:
-        print("[run_claude] resume failed without stderr, retrying with fresh session", flush=True)
+    # session 不可恢复时自动退回新 session，避免用户必须手动 /new。
+    # 触发条件：1) stderr 为空（cwd 不兼容等）2) session 已被清理/过期
+    _session_gone = (
+        session_id
+        and returncode != 0
+        and (
+            (not stderr_text and not final_text)
+            or "No conversation found" in (stderr_text or "")
+        )
+    )
+    if _session_gone:
+        print("[run_claude] resume failed, retrying with fresh session", flush=True)
         final_text, new_session_id, returncode, stderr_text = await _run_once(None)
         used_fresh_session_fallback = True
 
